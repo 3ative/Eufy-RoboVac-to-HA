@@ -11,7 +11,7 @@ Config Entry:
 eufy_vacuum:
   devices:
     - name: WizzVac1
-      address: 192.168.0.81
+      address: 
       access_token: 
       id: 
       type: T2118
