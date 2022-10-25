@@ -1,5 +1,10 @@
 # Eufy RoboVac to HA
 
+## Update:
+### - You now have to register your device with the new App on your phone.
+### - From there "share" it with the old App (In BlueStacks), as shown in the tutorial.
+#
+
 Download for [BlueStacks here](https://www.bluestacks.com/)
 
 Grab the files using the "**Code**" Button and select "**Download ZIP**"
@@ -16,6 +21,7 @@ eufy_vacuum:
       id: 
       type: T2118
 ```
+
 
 # Watch the full tutorial here: https://youtu.be/dx5RuNgU8CY 
 
