@@ -1,5 +1,3 @@
-### HA support
-
 """Support for Eufy devices."""
 import logging
 
@@ -31,8 +29,24 @@ CONFIG_SCHEMA = vol.Schema({
 }, extra=vol.ALLOW_EXTRA)
 
 
-def setup(hass, config):
+async def async_setup(hass, config):
     """Set up Eufy devices."""
+    for device_info in config.get(DOMAIN, {}).get(CONF_DEVICES, []):
+        device = {}
+        device['address'] = device_info[CONF_ADDRESS]
+        device['local_key'] = device_info.get(CONF_ACCESS_TOKEN)
+        device['device_id'] = device_info[CONF_ID]
+        device['name'] = device_info.get(CONF_NAME)
+        device['model'] = device_info[CONF_TYPE]
+        hass.async_create_task(
+            discovery.async_load_platform(hass, 'vacuum', DOMAIN, device, config)
+        )
+
+    return True
+
+
+def setup(hass, config):
+    """Set up Eufy devices (legacy sync setup)."""
     for device_info in config.get(DOMAIN, {}).get(CONF_DEVICES, []):
         device = {}
         device['address'] = device_info[CONF_ADDRESS]
