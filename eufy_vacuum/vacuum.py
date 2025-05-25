@@ -2,14 +2,8 @@
 import logging
 
 from homeassistant.components.vacuum import (
-    PLATFORM_SCHEMA,
-    STATE_CLEANING, STATE_DOCKED, STATE_IDLE, STATE_PAUSED, STATE_RETURNING,
-    STATE_ERROR,
-    SUPPORT_BATTERY, SUPPORT_CLEAN_SPOT, SUPPORT_FAN_SPEED, SUPPORT_LOCATE,
-    SUPPORT_PAUSE, SUPPORT_RETURN_HOME, SUPPORT_STATUS, SUPPORT_START,
-    SUPPORT_TURN_ON, SUPPORT_TURN_OFF,
-    VacuumEntity)
-
+    StateVacuumEntity, VacuumEntityFeature, VacuumActivity
+)
 
 from . import robovac
 
@@ -29,9 +23,11 @@ FAN_SPEEDS = {
 
 
 SUPPORT_ROBOVAC_T2118 = (
-    SUPPORT_BATTERY | SUPPORT_CLEAN_SPOT | SUPPORT_FAN_SPEED | SUPPORT_LOCATE |
-    SUPPORT_PAUSE | SUPPORT_RETURN_HOME | SUPPORT_START | SUPPORT_STATUS |
-    SUPPORT_TURN_OFF | SUPPORT_TURN_ON
+    VacuumEntityFeature.BATTERY | VacuumEntityFeature.CLEAN_SPOT | 
+    VacuumEntityFeature.FAN_SPEED | VacuumEntityFeature.LOCATE |
+    VacuumEntityFeature.PAUSE | VacuumEntityFeature.RETURN_HOME | 
+    VacuumEntityFeature.START | VacuumEntityFeature.STATUS |
+    VacuumEntityFeature.TURN_OFF | VacuumEntityFeature.TURN_ON
 )
 
 
@@ -43,18 +39,18 @@ MODEL_CONFIG = {
 }
 
 
-def setup_platform(hass, config, add_entities, device_config=None):
+def setup_platform(hass, config, add_entities, discovery_info=None):
     """Set up Eufy vacuum cleaners."""
-    if device_config is None:
+    if discovery_info is None:
         return
-    add_entities([EufyVacuum(device_config)], True)
+    add_entities([EufyVacuum(discovery_info)], True)
 
 
-class EufyVacuum(VacuumEntity):
+class EufyVacuum(StateVacuumEntity):
     """Representation of a Eufy vacuum cleaner."""
 
     def __init__(self, device_config):
-        """Initialize the light."""
+        """Initialize the vacuum."""
 
         try:
             self._config = MODEL_CONFIG[device_config['model'].upper()]
@@ -69,10 +65,19 @@ class EufyVacuum(VacuumEntity):
             device_config['device_id'], device_config['address'],
             device_config['local_key'])
         self._name = device_config['name']
+        self._available = False
 
     async def async_update(self):
         """Synchronise state from the vacuum."""
-        await self.robovac.async_get()
+        try:
+            if not self.robovac._connected:
+                await self.robovac.async_connect()
+            await self.robovac.async_get()
+            self._available = True
+            _LOGGER.debug(f"Successfully updated vacuum {self._name}, state: {self.robovac.state}")
+        except Exception as e:
+            _LOGGER.error(f"Failed to update vacuum {self._name}: {e}")
+            self._available = False
 
     @property
     def unique_id(self):
@@ -111,30 +116,32 @@ class EufyVacuum(VacuumEntity):
         return self.robovac.battery_level
 
     @property
-    def status(self):
-        """Return the status of the vacuum cleaner."""
+    def activity(self) -> VacuumActivity | None:
+        """Return the current activity of the vacuum cleaner."""
         if self.robovac.error_code != robovac.ErrorCode.NO_ERROR:
-            return STATE_ERROR
+            return VacuumActivity.ERROR
         elif self.robovac.go_home:
-            return STATE_RETURNING
+            return VacuumActivity.RETURNING
         elif self.robovac.work_status == robovac.WorkStatus.RUNNING:
-            return STATE_CLEANING
+            return VacuumActivity.CLEANING
         elif self.robovac.work_status == robovac.WorkStatus.CHARGING:
-            return STATE_DOCKED
+            return VacuumActivity.DOCKED
         elif self.robovac.work_status == robovac.WorkStatus.RECHARGE_NEEDED:
             # Should be captured by `go_home` above, but just in case
-            return STATE_RETURNING
+            return VacuumActivity.RETURNING
         elif self.robovac.work_status == robovac.WorkStatus.SLEEPING:
-            return STATE_IDLE
+            return VacuumActivity.IDLE
         elif self.robovac.work_status == robovac.WorkStatus.STAND_BY:
-            return STATE_IDLE
+            return VacuumActivity.PAUSED
         elif self.robovac.work_status == robovac.WorkStatus.COMPLETED:
-            return STATE_DOCKED
+            return VacuumActivity.DOCKED
+        
+        return VacuumActivity.IDLE
 
     @property
     def available(self) -> bool:
         """Return True if entity is available."""
-        return True
+        return self._available
 
     async def async_return_to_base(self, **kwargs):
         """Set the vacuum cleaner to return to the dock."""
@@ -178,4 +185,4 @@ class EufyVacuum(VacuumEntity):
         if self.robovac.play_pause:
             await self.async_pause()
         else:
-            await self.async_play()
+            await self.async_resume()
