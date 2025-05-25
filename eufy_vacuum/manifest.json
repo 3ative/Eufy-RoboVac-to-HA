@@ -5,6 +5,8 @@
   "issue_tracker": "",
   "dependencies": [],
   "codeowners": [],
-  "requirements": [],
-  "version": "0.9"
+  "requirements": ["cryptography"],
+  "version": "1.0.0",
+  "iot_class": "local_polling",
+  "integration_type": "device"
 }
