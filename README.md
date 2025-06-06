@@ -1,9 +1,9 @@
 # Eufy RoboVac to HA
 
-## Update:
-### 🥳 I've done a full code rewrite. Tested on Home Assistant 2025.5.0 - See new files above
-### - You now have to register your device with the new App on your phone.
-### - From there "share" it with the old App (In BlueStacks), as shown in the tutorial.
+# Update:
+# 🥳 I've done a full code rewrite. Tested on Home Assistant 2025.5.0 - See new files above
+- ### You now have to register your device with the new App on your phone.
+- ### From there "share" it with the old App (In BlueStacks), as shown in the tutorial.
 #
 
 Download for [BlueStacks here](https://www.bluestacks.com/)
@@ -26,8 +26,9 @@ eufy_vacuum:
 
 # Watch the full tutorial here: https://youtu.be/dx5RuNgU8CY 
 
-___
-#### 💖 Found this useful, want to say '*Thanks*' and support my efforts. *CHEERS*🍺
+---
+### 🤝 Found this useful, want to say 'Thanks' and support my efforts. CHEERS🍺
 | Buy me a Coffee | PATREON |
 |-----------------|---------|
-| https://www.buymeacoffee.com/3ative | https://www.patreon.com/3ative |
+| [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-donate-yellow.svg?style=flat-square&logo=buy-me-a-coffee)](https://www.buymeacoffee.com/3ative) | [![Patreon](https://img.shields.io/badge/Patreon-support-red.svg?style=flat-square&logo=patreon)](https://www.patreon.com/3ative) |
+---
