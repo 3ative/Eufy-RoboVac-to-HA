@@ -162,6 +162,57 @@ class EufyVacuum(StateVacuumEntity):
         return self._available
 
     @property
+    def extra_state_attributes(self):
+        """Return extra state attributes."""
+        attributes = {}
+        
+        # Add battery level and charging status for compatibility with vacuum cards
+        if self._connection_manager and self._connection_manager.robovac:
+            try:
+                # Get battery from the shared connection
+                battery_level = self._connection_manager.robovac.battery_level
+                if battery_level is not None:
+                    attributes['battery_level'] = battery_level
+                    attributes['battery_icon'] = self._get_battery_icon(battery_level)
+                
+                # Get charging status from the shared connection
+                is_charging = self._connection_manager.robovac.work_status == robovac.WorkStatus.CHARGING
+                attributes['charging'] = is_charging
+                attributes['charging_status'] = "Charging" if is_charging else "Not Charging"
+                
+            except:
+                pass
+                
+        return attributes
+    
+    def _get_battery_icon(self, battery_level):
+        """Return a battery icon based on the battery level."""
+        if battery_level is None:
+            return 'mdi:battery-unknown'
+        elif battery_level <= 5:
+            return 'mdi:battery-outline'
+        elif battery_level <= 15:
+            return 'mdi:battery-10'
+        elif battery_level <= 25:
+            return 'mdi:battery-20'
+        elif battery_level <= 35:
+            return 'mdi:battery-30'
+        elif battery_level <= 45:
+            return 'mdi:battery-40'
+        elif battery_level <= 55:
+            return 'mdi:battery-50'
+        elif battery_level <= 65:
+            return 'mdi:battery-60'
+        elif battery_level <= 75:
+            return 'mdi:battery-70'
+        elif battery_level <= 85:
+            return 'mdi:battery-80'
+        elif battery_level <= 95:
+            return 'mdi:battery-90'
+        else:
+            return 'mdi:battery'
+
+    @property
     def device_info(self) -> DeviceInfo:
         """Return device information."""
         return DeviceInfo(
