@@ -1,7 +1,7 @@
 # Eufy RoboVac to HA
 
 # Update:
-# 🥳 I've done a full code rewrite. Tested on Home Assistant 2025.5.0 - See new files above
+# 🥳 I've done a full code rewrite. Tested on Home Assistant 2025.8.0 - See new files above
 - ### You now have to register your device with the new App on your phone.
 - ### From there "share" it with the old App (In BlueStacks), as shown in the tutorial.
 #
