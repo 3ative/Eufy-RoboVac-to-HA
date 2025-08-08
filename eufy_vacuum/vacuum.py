@@ -156,6 +156,25 @@ class EufyVacuum(StateVacuumEntity):
         
         return VacuumActivity.IDLE
 
+    @property 
+    def state(self):
+        """Return the state of the vacuum with proper capitalization."""
+        activity = self.activity
+        if activity is None:
+            return "Unknown"
+        
+        # Convert enum to string and capitalize properly
+        state_map = {
+            VacuumActivity.CLEANING: "Cleaning",
+            VacuumActivity.DOCKED: "Docked", 
+            VacuumActivity.RETURNING: "Returning",
+            VacuumActivity.IDLE: "Idle",
+            VacuumActivity.PAUSED: "Paused",
+            VacuumActivity.ERROR: "Error"
+        }
+        
+        return state_map.get(activity, str(activity).capitalize())
+
     @property
     def available(self) -> bool:
         """Return True if entity is available."""
