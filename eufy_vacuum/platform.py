@@ -38,8 +38,20 @@ async def async_setup(hass, config):
         device['device_id'] = device_info[CONF_ID]
         device['name'] = device_info.get(CONF_NAME)
         device['model'] = device_info[CONF_TYPE]
+        
+        # Load vacuum platform
         hass.async_create_task(
             discovery.async_load_platform(hass, 'vacuum', DOMAIN, device, config)
+        )
+        
+        # Load sensor platform for battery status
+        hass.async_create_task(
+            discovery.async_load_platform(hass, 'sensor', DOMAIN, device, config)
+        )
+        
+        # Load binary_sensor platform for charging status
+        hass.async_create_task(
+            discovery.async_load_platform(hass, 'binary_sensor', DOMAIN, device, config)
         )
 
     return True
@@ -54,6 +66,14 @@ def setup(hass, config):
         device['device_id'] = device_info[CONF_ID]
         device['name'] = device_info.get(CONF_NAME)
         device['model'] = device_info[CONF_TYPE]
+        
+        # Load vacuum platform
         discovery.load_platform(hass, 'vacuum', DOMAIN, device, config)
+        
+        # Load sensor platform for battery status
+        discovery.load_platform(hass, 'sensor', DOMAIN, device, config)
+        
+        # Load binary_sensor platform for charging status
+        discovery.load_platform(hass, 'binary_sensor', DOMAIN, device, config)
 
     return True
