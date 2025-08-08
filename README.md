@@ -1,11 +1,12 @@
 # Eufy RoboVac to HA
 
-# Update:
-# 🥳 I've done a full code rewrite. Tested on Home Assistant 2025.8.0 - See new files above
-- ### You now have to register your device with the new App on your phone.
-- ### From there "share" it with the old App (In BlueStacks), as shown in the tutorial.
+## Updates:
+🥳 I've done another full code rewrite. Tested on Home Assistant 2025.8.0 - See changes and new files above.
+- Also, See here [Vacuum battery properties are deprecated](https://developers.home-assistant.io/blog/2025/07/02/vacuum-battery-properties-deprecated/) for why.
 #
-
+- #### You now have to register your device with the new App on your phone.
+- #### From there "share" it with the old App (In BlueStacks), as shown in the tutorial.
+#
 Download for [BlueStacks here](https://www.bluestacks.com/)
 
 Grab the files using the "**Code**" Button and select "**Download ZIP**"
