@@ -4,8 +4,10 @@ import logging
 from homeassistant.components.vacuum import (
     StateVacuumEntity, VacuumEntityFeature, VacuumActivity
 )
+from homeassistant.helpers.entity import DeviceInfo
 
 from . import robovac
+from . import EufyConnectionManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -23,7 +25,7 @@ FAN_SPEEDS = {
 
 
 SUPPORT_ROBOVAC_T2118 = (
-    VacuumEntityFeature.BATTERY | VacuumEntityFeature.CLEAN_SPOT | 
+    VacuumEntityFeature.CLEAN_SPOT | 
     VacuumEntityFeature.FAN_SPEED | VacuumEntityFeature.LOCATE |
     VacuumEntityFeature.PAUSE | VacuumEntityFeature.RETURN_HOME | 
     VacuumEntityFeature.START | VacuumEntityFeature.STATUS |
@@ -61,23 +63,38 @@ class EufyVacuum(StateVacuumEntity):
         self._fan_speed_reverse_mapping = {
             v: k for k, v in self._config['fan_speeds'].items()}
         self._device_id = device_config['device_id']
-        self.robovac = robovac.Robovac(
-            device_config['device_id'], device_config['address'],
-            device_config['local_key'])
+        self._device_config = device_config
         self._name = device_config['name']
         self._available = False
+        self._connection_manager = None
+
+    async def async_added_to_hass(self):
+        """Called when entity is added to hass."""
+        self._connection_manager = await EufyConnectionManager.get_instance(
+            self._device_config['device_id'],
+            self._device_config['address'], 
+            self._device_config['local_key']
+        )
 
     async def async_update(self):
         """Synchronise state from the vacuum."""
+        if self._connection_manager is None:
+            return
+            
         try:
-            if not self.robovac._connected:
-                await self.robovac.async_connect()
-            await self.robovac.async_get()
-            self._available = True
-            _LOGGER.debug(f"Successfully updated vacuum {self._name}, state: {self.robovac.state}")
+            self._available = await self._connection_manager.update()
+            if self._available:
+                _LOGGER.debug(f"Successfully updated vacuum {self._name}")
         except Exception as e:
             _LOGGER.error(f"Failed to update vacuum {self._name}: {e}")
             self._available = False
+
+    @property
+    def robovac(self):
+        """Get the robovac instance."""
+        if self._connection_manager and self._connection_manager.robovac:
+            return self._connection_manager.robovac
+        return None
 
     @property
     def unique_id(self):
@@ -92,6 +109,8 @@ class EufyVacuum(StateVacuumEntity):
     @property
     def is_on(self):
         """Return true if device is on."""
+        if not self.robovac:
+            return False
         return self.robovac.work_status == robovac.WorkStatus.RUNNING
 
     @property
@@ -102,6 +121,8 @@ class EufyVacuum(StateVacuumEntity):
     @property
     def fan_speed(self):
         """Return the fan speed of the vacuum cleaner."""
+        if not self.robovac:
+            return FAN_SPEED_OFF
         return self._config['fan_speeds'].get(
             self.robovac.clean_speed, FAN_SPEED_OFF)
 
@@ -111,13 +132,11 @@ class EufyVacuum(StateVacuumEntity):
         return list(self._config['fan_speeds'].values())
 
     @property
-    def battery_level(self):
-        """Return the battery level of the vacuum cleaner."""
-        return self.robovac.battery_level
-
-    @property
     def activity(self) -> VacuumActivity | None:
         """Return the current activity of the vacuum cleaner."""
+        if not self.robovac:
+            return VacuumActivity.IDLE
+            
         if self.robovac.error_code != robovac.ErrorCode.NO_ERROR:
             return VacuumActivity.ERROR
         elif self.robovac.go_home:
@@ -127,7 +146,6 @@ class EufyVacuum(StateVacuumEntity):
         elif self.robovac.work_status == robovac.WorkStatus.CHARGING:
             return VacuumActivity.DOCKED
         elif self.robovac.work_status == robovac.WorkStatus.RECHARGE_NEEDED:
-            # Should be captured by `go_home` above, but just in case
             return VacuumActivity.RETURNING
         elif self.robovac.work_status == robovac.WorkStatus.SLEEPING:
             return VacuumActivity.IDLE
@@ -143,26 +161,45 @@ class EufyVacuum(StateVacuumEntity):
         """Return True if entity is available."""
         return self._available
 
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information."""
+        return DeviceInfo(
+            identifiers={("eufy_vacuum", self._device_id)},
+            name=self._device_config.get('name', 'Eufy Vacuum'),
+            manufacturer="Eufy",
+            model=self._device_config.get('model', 'RoboVac'),
+        )
+
     async def async_return_to_base(self, **kwargs):
         """Set the vacuum cleaner to return to the dock."""
-        await self.robovac.async_go_home()
+        if self._connection_manager and self._connection_manager.robovac:
+            await self._connection_manager.robovac.async_go_home()
 
     async def async_clean_spot(self, **kwargs):
         """Perform a spot clean-up."""
-        await self.robovac.async_set_work_mode(robovac.WorkMode.SPOT)
+        if self._connection_manager and self._connection_manager.robovac:
+            await self._connection_manager.robovac.async_set_work_mode(robovac.WorkMode.SPOT)
 
     async def async_locate(self, **kwargs):
         """Locate the vacuum cleaner."""
-        await self.robovac.async_find_robot()
+        if self._connection_manager and self._connection_manager.robovac:
+            await self._connection_manager.robovac.async_find_robot()
 
     async def async_set_fan_speed(self, fan_speed, **kwargs):
         """Set fan speed."""
-        clean_speed = self._fan_speed_reverse_mapping[fan_speed]
-        await self.robovac.async_set_clean_speed(clean_speed)
+        if self._connection_manager and self._connection_manager.robovac:
+            clean_speed = self._fan_speed_reverse_mapping[fan_speed]
+            await self._connection_manager.send_command_and_update(
+                self._connection_manager.robovac.async_set_clean_speed(clean_speed)
+            )
 
     async def async_turn_on(self, **kwargs):
         """Turn the vacuum on."""
-        await self.robovac.async_set_work_mode(robovac.WorkMode.AUTO)
+        if self._connection_manager and self._connection_manager.robovac:
+            await self._connection_manager.send_command_and_update(
+                self._connection_manager.robovac.async_set_work_mode(robovac.WorkMode.AUTO)
+            )
 
     async def async_turn_off(self, **kwargs):
         """Turn the vacuum off and return to home."""
@@ -174,15 +211,22 @@ class EufyVacuum(StateVacuumEntity):
 
     async def async_resume(self, **kwargs):
         """Resume the cleaning cycle."""
-        await self.robovac.async_play()
+        if self._connection_manager and self._connection_manager.robovac:
+            await self._connection_manager.send_command_and_update(
+                self._connection_manager.robovac.async_play()
+            )
 
     async def async_pause(self, **kwargs):
         """Pause the cleaning cycle."""
-        await self.robovac.async_pause()
+        if self._connection_manager and self._connection_manager.robovac:
+            await self._connection_manager.send_command_and_update(
+                self._connection_manager.robovac.async_pause()
+            )
 
     async def async_start_pause(self, **kwargs):
         """Pause the cleaning task or resume it."""
-        if self.robovac.play_pause:
-            await self.async_pause()
-        else:
-            await self.async_resume()
+        if self._connection_manager and self._connection_manager.robovac:
+            if self._connection_manager.robovac.play_pause:
+                await self.async_pause()
+            else:
+                await self.async_resume()
