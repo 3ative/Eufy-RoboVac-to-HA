@@ -3,6 +3,9 @@
 ## Updates:
 🥳 I've done another full code rewrite. Tested on Home Assistant 2025.8.0 - See changes and new files above.
 - Also, See here [Vacuum battery properties are deprecated](https://developers.home-assistant.io/blog/2025/07/02/vacuum-battery-properties-deprecated/) for why.
+- Added file: binary_sensor.py = Charging Status
+- Added file: sensor.py = New Battery Percentage
+- Rewrote other files to include the new sensors BACK as Atrributes to ``vacuum.xxx`` entity
 #
 - #### You now have to register your device with the new App on your phone.
 - #### From there "share" it with the old App (In BlueStacks), as shown in the tutorial.
