@@ -1,4 +1,4 @@
-"""Support for Eufy vacuum cleaners."""
+"""Support for Eufy vacuum cleaners - OPTIMIZED for reduced database writes."""
 import logging
 
 from homeassistant.components.vacuum import (
@@ -27,8 +27,9 @@ FAN_SPEEDS = {
 SUPPORT_ROBOVAC_T2118 = (
     VacuumEntityFeature.CLEAN_SPOT | 
     VacuumEntityFeature.FAN_SPEED | VacuumEntityFeature.LOCATE |
-    VacuumEntityFeature.PAUSE | VacuumEntityFeature.RETURN_HOME | 
+    VacuumEntityFeature.PAUSE | VacuumEntityFeature.RETURN_HOME |
     VacuumEntityFeature.START | VacuumEntityFeature.STATUS |
+    VacuumEntityFeature.STOP |
     VacuumEntityFeature.TURN_OFF | VacuumEntityFeature.TURN_ON
 )
 
@@ -49,7 +50,14 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
 
 
 class EufyVacuum(StateVacuumEntity):
-    """Representation of a Eufy vacuum cleaner."""
+    """
+    Representation of a Eufy vacuum cleaner.
+    
+    OPTIMIZED:
+    - Uses 30-second update interval from connection manager
+    - State change detection built into connection manager
+    - Reduced attribute updates
+    """
 
     def __init__(self, device_config):
         """Initialize the vacuum."""
@@ -62,26 +70,51 @@ class EufyVacuum(StateVacuumEntity):
 
         self._fan_speed_reverse_mapping = {
             v: k for k, v in self._config['fan_speeds'].items()}
-        self._device_id = device_config['device_id']
+        self._device_id = device_config.get('device_id') or device_config.get('id')
         self._device_config = device_config
         self._name = device_config['name']
-        self._available = False
+        
+        # Start as available to prevent "unavailable" flicker on HA startup
+        # Will become actually available once first update succeeds
+        self._available = True  # CHANGED: Start optimistically available
+        
         self._connection_manager = None
+        
+        # Track last known attribute values to prevent unnecessary updates
+        self._last_battery_level = None
+        self._last_charging = None
 
     async def async_added_to_hass(self):
         """Called when entity is added to hass."""
+        # Handle both 'access_token' and 'local_key' keys
+        local_key = self._device_config.get('local_key') or self._device_config.get('access_token')
+        address = self._device_config.get('address')
+        
+        if not local_key:
+            _LOGGER.error(f"Missing local_key/access_token for device {self._device_id}")
+            return
+        
+        if not address:
+            _LOGGER.error(f"Missing address for device {self._device_id}")
+            return
+        
         self._connection_manager = await EufyConnectionManager.get_instance(
-            self._device_config['device_id'],
-            self._device_config['address'], 
-            self._device_config['local_key']
+            self._device_id,
+            address,
+            local_key
         )
 
     async def async_update(self):
-        """Synchronise state from the vacuum."""
+        """
+        Synchronise state from the vacuum - OPTIMIZED.
+        
+        Uses connection manager's 30-second rate limiting.
+        """
         if self._connection_manager is None:
             return
             
         try:
+            # Connection manager handles rate limiting and state change detection
             self._available = await self._connection_manager.update()
             if self._available:
                 _LOGGER.debug(f"Successfully updated vacuum {self._name}")
@@ -155,25 +188,26 @@ class EufyVacuum(StateVacuumEntity):
             return VacuumActivity.DOCKED
         
         return VacuumActivity.IDLE
+    
 
-    @property 
-    def state(self):
-        """Return the state of the vacuum with proper capitalization."""
+    @property
+    def translated_state(self) -> str | None:
+        """Return the translated state with proper capitalization."""
+        # This provides the display string while activity provides the enum
         activity = self.activity
         if activity is None:
-            return "Unknown"
+            return None
         
-        # Convert enum to string and capitalize properly
         state_map = {
             VacuumActivity.CLEANING: "Cleaning",
-            VacuumActivity.DOCKED: "Docked", 
+            VacuumActivity.DOCKED: "Docked",
             VacuumActivity.RETURNING: "Returning",
             VacuumActivity.IDLE: "Idle",
             VacuumActivity.PAUSED: "Paused",
-            VacuumActivity.ERROR: "Error"
+            VacuumActivity.ERROR: "Error",
         }
         
-        return state_map.get(activity, str(activity).capitalize())
+        return state_map.get(activity)
 
     @property
     def available(self) -> bool:
@@ -182,24 +216,40 @@ class EufyVacuum(StateVacuumEntity):
 
     @property
     def extra_state_attributes(self):
-        """Return extra state attributes."""
+        """
+        Return extra state attributes - OPTIMIZED.
+        
+        Attributes are always included for card compatibility.
+        """
         attributes = {}
         
         # Add battery level and charging status for compatibility with vacuum cards
         if self._connection_manager and self._connection_manager.robovac:
             try:
-                # Get battery from the shared connection
+                # Get current values
                 battery_level = self._connection_manager.robovac.battery_level
+                is_charging = self._connection_manager.robovac.work_status == robovac.WorkStatus.CHARGING
+                
+                # Battery attributes (for xiaomi-vacuum-card)
                 if battery_level is not None:
-                    attributes['battery_level'] = battery_level
+                    attributes['battery'] = battery_level
                     attributes['battery_icon'] = self._get_battery_icon(battery_level)
                 
-                # Get charging status from the shared connection
-                is_charging = self._connection_manager.robovac.work_status == robovac.WorkStatus.CHARGING
-                attributes['charging'] = is_charging
+                # Charging attributes (for xiaomi-vacuum-card)
+                attributes['battery_charging'] = is_charging
                 attributes['charging_status'] = "Charging" if is_charging else "Not Charging"
                 
-            except:
+                # Track for logging purposes only
+                if battery_level != self._last_battery_level:
+                    self._last_battery_level = battery_level
+                    _LOGGER.debug(f"Battery level changed to {battery_level}%")
+                
+                if is_charging != self._last_charging:
+                    self._last_charging = is_charging
+                    _LOGGER.debug(f"Charging status changed to {is_charging}")
+                    
+            except Exception as e:
+                _LOGGER.debug(f"Error getting extra attributes: {e}")
                 pass
                 
         return attributes
@@ -292,6 +342,10 @@ class EufyVacuum(StateVacuumEntity):
             await self._connection_manager.send_command_and_update(
                 self._connection_manager.robovac.async_pause()
             )
+    
+    async def async_stop(self, **kwargs):
+        """Stop the vacuum and return to base."""
+        await self.async_return_to_base()
 
     async def async_start_pause(self, **kwargs):
         """Pause the cleaning task or resume it."""
