@@ -1,9 +1,8 @@
-"""Support for Eufy vacuum sensors - OPTIMIZED for reduced database writes."""
+"""Support for Eufy vacuum binary sensors - OPTIMIZED for reduced database writes."""
 import logging
 from datetime import timedelta
 
-from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
-from homeassistant.const import PERCENTAGE
+from homeassistant.components.binary_sensor import BinarySensorEntity, BinarySensorDeviceClass
 from homeassistant.helpers.entity import DeviceInfo
 
 from . import robovac
@@ -11,42 +10,41 @@ from . import EufyConnectionManager
 
 _LOGGER = logging.getLogger(__name__)
 
-# OPTIMIZED: Battery sensor updates every 60 seconds (was 10s)
-# This reduces database writes from 8,640/day to 1,440/day per vacuum
+# OPTIMIZED: Charging sensor updates every 60 seconds (was frequent polling)
 SCAN_INTERVAL = timedelta(seconds=60)
 
 
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
-    """Set up Eufy vacuum battery sensor."""
+    """Set up Eufy vacuum charging binary sensor."""
     if discovery_info is None:
         return
     
     device_config = discovery_info
-    async_add_entities([EufyVacuumBatterySensor(device_config)], True)
+    async_add_entities([EufyVacuumChargingBinarySensor(device_config)], True)
 
 
-class EufyVacuumBatterySensor(SensorEntity):
+class EufyVacuumChargingBinarySensor(BinarySensorEntity):
     """
-    Representation of Eufy Vacuum Battery Sensor.
+    Representation of Eufy Vacuum Charging Binary Sensor.
     
     OPTIMIZED:
-    - 60-second update interval (instead of 10s)
+    - 60-second update interval
     - State change detection to prevent unnecessary writes
-    - Only updates state if battery level actually changed
+    - Only updates state if charging status actually changed
     """
 
     def __init__(self, device_config):
-        """Initialize the sensor."""
+        """Initialize the binary sensor."""
         self._device_config = device_config
         # Handle both 'id' and 'device_id' keys
         self._device_id = device_config.get('device_id') or device_config.get('id')
-        self._name = f"{device_config['name']} Battery"
-        self._battery_level = None
+        self._name = f"{device_config['name']} Charging"
+        self._is_charging = False
         self._available = False
         self._connection_manager = None
         
-        # Track last known value to prevent unnecessary updates
-        self._last_battery_level = None
+        # Track last known state to prevent unnecessary updates
+        self._last_is_charging = None
 
     async def async_added_to_hass(self):
         """Called when entity is added to hass."""
@@ -76,27 +74,17 @@ class EufyVacuumBatterySensor(SensorEntity):
     @property
     def unique_id(self):
         """Return a unique ID."""
-        return f"{self._device_id}_battery"
+        return f"{self._device_id}_charging"
 
     @property
-    def native_value(self):
-        """Return the state of the sensor."""
-        return self._battery_level
-
-    @property
-    def native_unit_of_measurement(self):
-        """Return the unit of measurement."""
-        return PERCENTAGE
+    def is_on(self):
+        """Return true if the vacuum is charging."""
+        return self._is_charging
 
     @property
     def device_class(self):
         """Return the device class."""
-        return SensorDeviceClass.BATTERY
-
-    @property
-    def state_class(self):
-        """Return the state class."""
-        return SensorStateClass.MEASUREMENT
+        return BinarySensorDeviceClass.BATTERY_CHARGING
 
     @property
     def available(self) -> bool:
@@ -115,7 +103,7 @@ class EufyVacuumBatterySensor(SensorEntity):
 
     async def async_update(self):
         """
-        Update the sensor with improved caching.
+        Update the binary sensor with improved caching.
         
         CACHING STRATEGY:
         - If update succeeds: Update values and mark available
@@ -126,7 +114,7 @@ class EufyVacuumBatterySensor(SensorEntity):
         if self._connection_manager is None:
             _LOGGER.debug(f"Connection manager not ready for {self._name}")
             # Only mark unavailable if we've never gotten data
-            if self._battery_level is None:
+            if self._last_is_charging is None:
                 self._available = False
             return
             
@@ -136,45 +124,43 @@ class EufyVacuumBatterySensor(SensorEntity):
             
             # Check if we got valid data back
             if update_success and self._connection_manager.robovac:
-                battery_level = self._connection_manager.robovac.battery_level
+                # Calculate current charging status from work_status
+                is_charging = (
+                    self._connection_manager.robovac.work_status == robovac.WorkStatus.CHARGING
+                )
                 
-                # Only update if we got a real battery value
-                if battery_level is not None:
-                    self._battery_level = battery_level
-                    self._available = True  # Mark as available - we have good data
-                    
-                    # Log changes for debugging (doesn't affect database writes)
-                    if battery_level != self._last_battery_level:
-                        self._last_battery_level = battery_level
-                        _LOGGER.debug(f"Battery sensor updated: {self._battery_level}% (changed)")
-                    else:
-                        _LOGGER.debug(f"Battery sensor: {self._battery_level}% (no change)")
+                # Update with fresh data
+                self._is_charging = is_charging
+                self._available = True  # Mark as available - we have good data
+                
+                # Log changes for debugging (doesn't affect database writes)
+                if is_charging != self._last_is_charging:
+                    self._last_is_charging = is_charging
+                    _LOGGER.debug(f"Charging sensor updated: {self._is_charging} (changed)")
                 else:
-                    # Battery value is None but connection succeeded
-                    # This is unusual - keep last known value
-                    _LOGGER.debug(f"Battery level is None for {self._name}, keeping last value")
+                    _LOGGER.debug(f"Charging sensor: {self._is_charging} (no change)")
             else:
                 # Update failed - USE CACHING instead of marking unavailable
-                # Keep the last known battery value and stay "available"
+                # Keep the last known charging status and stay "available"
                 # This prevents brief "unavailable" flickers on temporary connection issues
-                _LOGGER.debug(f"Update failed for {self._name}, using cached value: {self._battery_level}%")
-                # Don't change self._available or self._battery_level
+                _LOGGER.debug(f"Update failed for {self._name}, using cached value: {self._is_charging}")
+                # Don't change self._available or self._is_charging
                 # The entity will continue showing the last good value
                 
         except Exception as e:
             # Unexpected error occurred
             # Log it but still try to maintain availability with cached data
-            _LOGGER.error(f"Exception updating battery sensor {self._name}: {e}")
+            _LOGGER.error(f"Exception updating charging sensor {self._name}: {e}")
             
             # Only mark unavailable if we have no data at all
-            if self._battery_level is None:
+            if self._last_is_charging is None:
                 self._available = False
             else:
                 # We have cached data - stay available and use it
-                _LOGGER.debug(f"Using cached battery value during error: {self._battery_level}%")
+                _LOGGER.debug(f"Using cached charging value during error: {self._is_charging}")
                 
         except Exception as e:
-            _LOGGER.error(f"Failed to update battery sensor {self._name}: {e}")
+            _LOGGER.error(f"Failed to update charging sensor {self._name}: {e}")
             self._available = False
-            self._battery_level = None
-            self._last_battery_level = None
+            self._is_charging = False
+            self._last_is_charging = None
